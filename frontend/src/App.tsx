@@ -10,7 +10,7 @@ function App() {
   const { latestFrame } = useFrameSampler(videoRef, 10);
   
   // Note: Adjust the hubUrl based on your backend environment
-  const hubUrl = 'http://localhost:5205/detectionHub';
+  const hubUrl = 'http://localhost:5000/detectionHub';
   const { connectionState, detectionResults } = useSignalRClient(hubUrl, latestFrame);
 
   // Group items to show in the stats panel
