@@ -34,16 +34,14 @@ public class OpenCvImageProcessor : IImageProcessor
         var tensorData = new float[channels * h * w];
 
         var index = 0;
-        using (var indexer = floatMat.GetGenericIndexer<Vec3f>())
+        var indexer = floatMat.GetGenericIndexer<Vec3f>();
+        for (int c = 0; c < channels; c++)
         {
-            for (int c = 0; c < channels; c++)
+            for (int y = 0; y < h; y++)
             {
-                for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
                 {
-                    for (int x = 0; x < w; x++)
-                    {
-                        tensorData[index++] = indexer[y, x][c];
-                    }
+                    tensorData[index++] = indexer[y, x][c];
                 }
             }
         }

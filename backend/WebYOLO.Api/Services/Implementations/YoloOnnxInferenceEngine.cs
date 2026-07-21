@@ -17,7 +17,7 @@ public class YoloOnnxInferenceEngine : IInferenceEngine, IDisposable
             // fallback, or handled upstream
         }
         
-        var options = new SessionOptions();
+        var options = new Microsoft.ML.OnnxRuntime.SessionOptions();
         options.AppendExecutionProvider_CPU(); // Ensure CPU provider is used
         
         // Let it throw if file not found, proper handling is outside scope of POC or should be ensured before run

@@ -1,2 +1,4 @@
 <Solution>
+  <Project Path="WebYOLO.Api\WebYOLO.Api.csproj" />
+  <Project Path="WebYOLO.Tests\WebYOLO.Tests.csproj" />
 </Solution>

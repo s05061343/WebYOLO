@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { DetectionResult } from '../hooks/useSignalRClient';
+import type { DetectionResult } from '../hooks/useSignalRClient';
 
 interface BoundingBoxRendererProps {
   results: DetectionResult[];

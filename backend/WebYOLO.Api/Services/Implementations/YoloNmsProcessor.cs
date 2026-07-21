@@ -1,4 +1,5 @@
 using OpenCvSharp;
+using OpenCvSharp.Dnn;
 using WebYOLO.Api.Models;
 using WebYOLO.Api.Services.Interfaces;
 

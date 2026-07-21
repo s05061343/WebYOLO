@@ -9,8 +9,8 @@ function App() {
   // We use 10 FPS for frame sampling to avoid overloading backend
   const { latestFrame } = useFrameSampler(videoRef, 10);
   
-  // Note: Adjust the hubUrl based on your backend environment (defaulting to 5000/5001 or standard ASP.NET dev ports)
-  const hubUrl = 'http://localhost:5000/detectionHub';
+  // Note: Adjust the hubUrl based on your backend environment
+  const hubUrl = 'http://localhost:5205/detectionHub';
   const { connectionState, detectionResults } = useSignalRClient(hubUrl, latestFrame);
 
   // Group items to show in the stats panel

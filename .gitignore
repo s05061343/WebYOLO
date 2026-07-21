@@ -4,3 +4,7 @@ backend/WebYOLO.Api/obj/
 backend/WebYOLO.Tests/obj/
 
 backend/.vs/
+
+backend/WebYOLO.Tests/bin/
+
+backend/WebYOLO.Api/bin/
