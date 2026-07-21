@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 
-export const useFrameSampler = (videoRef: React.RefObject<HTMLVideoElement | null>, fps: number = 10) => {
+export const useFrameSampler = (videoRef: React.RefObject<HTMLVideoElement | null>, fps: number = 10, isActive: boolean = true) => {
   const [latestFrame, setLatestFrame] = useState<Blob | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 
   useEffect(() => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || !isActive) {
+      if (!isActive) setLatestFrame(null); // Clear last frame
+      return;
+    }
 
     const intervalMs = 1000 / fps;
     let intervalId: number;
@@ -57,7 +60,7 @@ export const useFrameSampler = (videoRef: React.RefObject<HTMLVideoElement | nul
         videoRef.current.removeEventListener('pause', handlePause);
       }
     };
-  }, [videoRef, fps]);
+  }, [videoRef, fps, isActive]);
 
   return { latestFrame };
 };

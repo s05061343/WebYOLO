@@ -1,13 +1,14 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useWebcam } from './hooks/useWebcam';
 import { useFrameSampler } from './hooks/useFrameSampler';
 import { useSignalRClient } from './hooks/useSignalRClient';
 import { BoundingBoxRenderer } from './components/BoundingBoxRenderer';
 
 function App() {
+  const [isDetecting, setIsDetecting] = useState<boolean>(true);
   const { stream, error, videoRef } = useWebcam();
   // We use 10 FPS for frame sampling to avoid overloading backend
-  const { latestFrame } = useFrameSampler(videoRef, 10);
+  const { latestFrame } = useFrameSampler(videoRef, 10, isDetecting);
   
   // Note: Adjust the hubUrl based on your backend environment
   const hubUrl = 'http://localhost:5000/detectionHub';
@@ -16,11 +17,13 @@ function App() {
   // Group items to show in the stats panel
   const detectedSummary = useMemo(() => {
     const summary: Record<string, number> = {};
-    detectionResults.forEach((r) => {
-      summary[r.label] = (summary[r.label] || 0) + 1;
-    });
+    if (isDetecting) {
+      detectionResults.forEach((r) => {
+        summary[r.label] = (summary[r.label] || 0) + 1;
+      });
+    }
     return Object.entries(summary);
-  }, [detectionResults]);
+  }, [detectionResults, isDetecting]);
 
   const getStatusClass = () => {
     if (connectionState === 'Connected') return 'connected';
@@ -33,9 +36,17 @@ function App() {
     <div className="dashboard">
       <header className="header">
         <h1>WebYOLO Dashboard</h1>
-        <div className={`status-badge ${getStatusClass()}`}>
-          <div className={`status-dot ${getStatusClass()}`} />
-          <span>{connectionState}</span>
+        <div className="header-controls">
+          <button 
+            className={`toggle-btn ${isDetecting ? 'active' : ''}`}
+            onClick={() => setIsDetecting(!isDetecting)}
+          >
+            {isDetecting ? '🟢 Detecting' : '⚪ Paused'}
+          </button>
+          <div className={`status-badge ${getStatusClass()}`}>
+            <div className={`status-dot ${getStatusClass()}`} />
+            <span>{connectionState}</span>
+          </div>
         </div>
       </header>
 
