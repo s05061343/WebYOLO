@@ -12,10 +12,17 @@ public class DetectionHub : Hub
         _detectionAppService = detectionAppService;
     }
 
-    public async Task Detect(byte[] imageBytes)
+    public async Task Detect(string base64Image)
     {
         try
         {
+            var commaIndex = base64Image.IndexOf(',');
+            if (commaIndex >= 0)
+            {
+                base64Image = base64Image.Substring(commaIndex + 1);
+            }
+            
+            var imageBytes = Convert.FromBase64String(base64Image);
             var results = _detectionAppService.DetectObjects(imageBytes);
             
             await Clients.Caller.SendAsync("OnDetectionResult", new

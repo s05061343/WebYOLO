@@ -55,20 +55,22 @@ export const useSignalRClient = (hubUrl: string, latestFrame: Blob | null) => {
   }, [hubUrl]);
 
   useEffect(() => {
-    const sendFrame = async () => {
+    const sendFrame = () => {
       if (
         latestFrame &&
         connectionRef.current &&
         connectionRef.current.state === signalR.HubConnectionState.Connected
       ) {
-        const arrayBuffer = await latestFrame.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        
-        try {
-          await connectionRef.current.invoke('Detect', uint8Array);
-        } catch (err) {
-          console.error('Error sending frame to SignalR', err);
-        }
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Data = reader.result as string;
+          try {
+            await connectionRef.current!.invoke('Detect', base64Data);
+          } catch (err) {
+            console.error('Error sending frame to SignalR', err);
+          }
+        };
+        reader.readAsDataURL(latestFrame);
       }
     };
 
