@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OpenCvSharp;
 using WebYOLO.Api.Services.Interfaces;
 
@@ -33,17 +34,12 @@ public class OpenCvImageProcessor : IImageProcessor
         var channels = floatMat.Channels();
         var tensorData = new float[channels * h * w];
 
-        var index = 0;
-        var indexer = floatMat.GetGenericIndexer<Vec3f>();
-        for (int c = 0; c < channels; c++)
+        Cv2.Split(floatMat, out Mat[] splitMats);
+        var channelSize = h * w;
+        for (int i = 0; i < channels; i++)
         {
-            for (int y = 0; y < h; y++)
-            {
-                for (int x = 0; x < w; x++)
-                {
-                    tensorData[index++] = indexer[y, x][c];
-                }
-            }
+            Marshal.Copy(splitMats[i].Data, tensorData, i * channelSize, channelSize);
+            splitMats[i].Dispose();
         }
 
         return tensorData;

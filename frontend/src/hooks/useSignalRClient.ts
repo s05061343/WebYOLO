@@ -18,6 +18,7 @@ export const useSignalRClient = (hubUrl: string, latestFrame: Blob | null) => {
   const [connectionState, setConnectionState] = useState<string>('Disconnected');
   const [detectionResults, setDetectionResults] = useState<DetectionResult[]>([]);
   const connectionRef = useRef<signalR.HubConnection | null>(null);
+  const isSending = useRef<boolean>(false);
 
   useEffect(() => {
     const connection = new signalR.HubConnectionBuilder()
@@ -56,11 +57,14 @@ export const useSignalRClient = (hubUrl: string, latestFrame: Blob | null) => {
 
   useEffect(() => {
     const sendFrame = () => {
+      if (isSending.current) return;
+      
       if (
         latestFrame &&
         connectionRef.current &&
         connectionRef.current.state === signalR.HubConnectionState.Connected
       ) {
+        isSending.current = true;
         const reader = new FileReader();
         reader.onloadend = async () => {
           const base64Data = reader.result as string;
@@ -68,6 +72,8 @@ export const useSignalRClient = (hubUrl: string, latestFrame: Blob | null) => {
             await connectionRef.current!.invoke('Detect', base64Data);
           } catch (err) {
             console.error('Error sending frame to SignalR', err);
+          } finally {
+            isSending.current = false;
           }
         };
         reader.readAsDataURL(latestFrame);
