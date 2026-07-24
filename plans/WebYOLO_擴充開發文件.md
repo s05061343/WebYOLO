@@ -1,5 +1,7 @@
 # WebYOLO 擴充開發文件
-> 版本：v1.0 | 日期：2026-07-23 | 狀態：草稿
+> 版本：v1.1 | 日期：2026-07-23 | 狀態：草稿
+> 
+> **v1.1 變更**：影像主要來源改為台北市交通管制工程處 HLS 串流（透過 tw.live 整合平台），大幅改善 FPS 穩定性與影像解析度，解除原有車速估算與車牌辨識的多項技術限制。
 
 ---
 
@@ -31,15 +33,22 @@
 
 ```
 [影像來源]
-  └─ 高公局 MJPEG：https://cctvn.freeway.gov.tw/abs2mjpg/bmjpg?camera=<ID>
+  ├─ 【主要】台北市 BOT HLS 串流（透過 tw.live 整合）
+  │     格式：HLS (.m3u8)  FPS：15~30  解析度：1280×720
+  │     範例：https://jtmctrafficcctv4.gov.taipei/NVR/<UUID>/live.m3u8
+  │     查詢：https://tw.live/cam/?id=BOT<ID>
+  │
+  └─ 【備用】高公局 MJPEG
+        格式：MJPEG  FPS：1~5（不穩定）  解析度：640×480
+        範例：https://cctvn.freeway.gov.tw/abs2mjpg/bmjpg?camera=<ID>
         │
         ▼
 [Python FastAPI AI 微服務]  :port 8000
-  ├─ 影像拉取（定時 polling 或接收 POST 上傳）
+  ├─ 影像讀取：cv2.VideoCapture(m3u8_url)  ← HLS 直接逐幀讀取
   ├─ YOLOv8 偵測 + 分類
-  ├─ ByteTrack 追蹤（維護 session 狀態）
+  ├─ ByteTrack 追蹤（維護 camera_id → tracker 實例）
   ├─ 透視變換 → 車速估算
-  ├─ 車牌 crop → OCR
+  ├─ 車牌 YOLO crop → EasyOCR
   └─ 回傳 JSON
         │
         ▼
@@ -51,7 +60,7 @@
         │
         ▼
 [React 前端]  :port 5173
-  ├─ 顯示 CCTV 畫面（<img> 載入 MJPEG URL）
+  ├─ 顯示 CCTV 畫面（HLS.js 播放 .m3u8 串流）
   ├─ Canvas overlay 繪製 bbox / 車速 / 車牌
   └─ 側邊欄：即時統計 + 歷史記錄
 ```
@@ -72,10 +81,10 @@
 
 ```json
 {
-  "camera_id": "C00001",
+  "camera_id": "BOT323",
   "timestamp": "2026-07-23T16:00:00+08:00",
   "frame_index": 42,
-  "fps_estimated": 2.5,
+  "fps_estimated": 25.0,
   "vehicles": [
     {
       "vehicle_id": 7,
@@ -85,8 +94,8 @@
         "x": 120, "y": 85,
         "width": 80, "height": 50
       },
-      "speed_kmh": 98.5,
-      "speed_confidence": "low",
+      "speed_kmh": 48.5,
+      "speed_confidence": "high",
       "plate_number": "ABC-1234",
       "plate_confidence": 0.87
     }
@@ -193,9 +202,9 @@ def get_tracker(camera_id: str) -> YOLO:
     return trackers[camera_id]
 ```
 
-> ⚠️ **已知限制（待解決）**：MJPEG FPS 不穩定，ByteTrack 的 Kalman Filter
-> 假設幀間時間固定，FPS 變動大時 Track ID 容易丟失。
-> **未來改善**：換用穩定 FPS 的影像來源（RTSP/HLS）。
+> ✅ **HLS 來源已解決此問題**：台北市 BOT HLS 串流提供穩定 15~30 FPS，
+> ByteTrack 的 Kalman Filter 可正常運作，Track ID 丟失率大幅降低。
+> 若切換回高公局 MJPEG 備用來源，FPS 不穩問題仍存在，需在 `warnings` 欄位標示。
 
 #### 2-3 車速計算
 
@@ -204,14 +213,17 @@ def get_tracker(camera_id: str) -> YOLO:
 `config/cameras.json` 格式：
 ```json
 {
-  "C00001": {
-    "name": "國1 北向 50k",
+  "BOT323": {
+    "name": "323-瑞光路與江南街口",
+    "source": "hls",
+    "stream_url": "https://jtmctrafficcctv4.gov.taipei/NVR/94addd69-c24f-4dca-8274-d3129fd4df25/live.m3u8",
+    "resolution": [1280, 720],
+    "fps_hint": 25,
     "roi": {
-      "image_points": [[120,200],[520,200],[580,400],[60,400]],
-      "real_world_meters": [0, 10],
-      "lane_width_meters": 3.75
-    },
-    "fps_hint": 2
+      "image_points": [[200,350],[1080,350],[1150,600],[130,600]],
+      "real_world_meters": [0, 15],
+      "lane_width_meters": 3.5
+    }
   }
 }
 ```
@@ -227,6 +239,7 @@ def get_tracker(camera_id: str) -> YOLO:
 ```
 
 > ⚠️ **已知限制**：`cameras.json` 中的 `image_points` 目前需工程師手動設定。
+> 標定方式：在 VLC 或瀏覽器截圖，對照路面標線或已知距離的地物量測像素座標。
 > **未來改善**：前端提供 Canvas 互動介面，讓使用者在畫面上點選四個標定點。
 
 #### 2-4 車牌辨識
@@ -241,13 +254,15 @@ def get_tracker(camera_id: str) -> YOLO:
 ```
 
 OCR 選擇（依優先序）：
-- **EasyOCR**：`pip install easyocr`，安裝簡單，Windows 相容性好
-- **PaddleOCR**：準確率較高，但 Windows 環境建置較複雜
-- **TrOCR**（HuggingFace）：Transformer-based，車牌效果佳
+- **EasyOCR**：`pip install easyocr`，安裝簡單，Windows 相容性好，**開發首選**
+- **PaddleOCR**：準確率較高，Linux/Docker 部署環境建議換用，Windows 安裝較複雜
+- **TrOCR**（HuggingFace）：Transformer-based，車牌效果佳，GPU 記憶體需求較高
 
-> ⚠️ **已知限制**：高公局攝影機解析度（通常 640×480）下，車牌約 15~20px 寬，
-> OCR 辨識率極低。**此功能需更高解析度影像才有實用價值。**
-> 目前實作重心放在架構完整性，未來換清晰影像來源後再調整 OCR 參數。
+> ✅ **HLS 來源提升 LPR 可行性**：台北市 BOT 路口鏡頭解析度達 1280×720，
+> 路口車輛距離較近，車牌寬度可達 60~120px，OCR 辨識率有實際意義。
+> 
+> ⚠️ **仍需注意**：車牌辨識效果受光線（逆光/夜間）、車速模糊影響。
+> 建議設定信心值門檻（≥ 0.65）並搭配台灣車牌格式 Regex 驗證。
 
 ---
 
@@ -327,18 +342,38 @@ await Clients.All.SendAsync("OnAnalysisResult", new {
 
 #### 4-1 影像顯示
 
-高公局 MJPEG 可直接用 `<img>` 載入（瀏覽器原生支援 MJPEG 刷新）：
+HLS 串流使用 **HLS.js** 在瀏覽器播放（原生 `<video>` 不支援 m3u8，需套件）：
 
-```tsx
-<img
-  src={`https://cctvn.freeway.gov.tw/abs2mjpg/bmjpg?camera=${cameraId}`}
-  alt="CCTV Live"
-  ref={imgRef}
-/>
+```bash
+npm install hls.js
 ```
 
-> ⚠️ **CORS 限制**：直接在前端載入可能遇到 CORS 問題。
-> **解決方案**：透過 C# 後端 Proxy 轉發影像串流，前端改連後端 URL。
+```tsx
+import Hls from 'hls.js';
+
+const CctvPlayer = ({ streamUrl }: { streamUrl: string }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(streamUrl);
+      hls.attachMedia(videoRef.current);
+      return () => hls.destroy();
+    }
+    // Safari 原生支援 HLS
+    videoRef.current.src = streamUrl;
+  }, [streamUrl]);
+
+  return <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%' }} />;
+};
+```
+
+> ⚠️ **CORS 限制**：部分政府串流伺服器可能有 CORS 限制。
+> **解決方案**：透過 C# 後端實作 HLS Proxy，前端統一連後端的代理端點。
+>
+> **備用（MJPEG）**：若使用高公局 MJPEG 來源，改用 `<img src={mjpegUrl} />` 即可，瀏覽器原生支援刷新。
 
 #### 4-2 Canvas Bbox 疊加
 
@@ -367,19 +402,19 @@ ctx.fillText(
 
 | 元件 | 說明 |
 |---|---|
-| `CctvPlayer` | 顯示 MJPEG 影像 + Canvas overlay |
+| `CctvPlayer` | HLS.js 播放 .m3u8 串流 + Canvas overlay |
 | `VehicleList` | 即時偵測到的車輛列表（ID / 速度 / 車牌） |
 | `StatisticsPanel` | 車流量統計圖表 |
 | `WarningBanner` | 顯示 warnings 陣列的提示列 |
-| `CameraSelector` | 選擇不同攝影機（未來用） |
+| `CameraSelector` | 切換 BOT 攝影機（依 tw.live 的 camera ID） |
 
 ---
 
 ### 第五階段：效能與穩定性
 
-- **動態 ROI 觸發**：只在車輛 bbox 進入畫面下方 60% 才執行 LPR（解析度較佳區域）
-- **異常處理**：Track ID 丟失時自動重新初始化 tracker
-- **Retry 機制**：MJPEG 抓取失敗時，等待 N 秒後重試
+- **動態 ROI 觸發**：只在車輛 bbox 進入畫面下方 60% 才執行 LPR（距離較近、解析度較佳）
+- **異常處理**：Track ID 丟失時自動重新初始化 tracker；HLS 斷流時自動重連（`hls.startLoad()`）
+- **HLS 緩衝管理**：`cv2.VideoCapture` 讀取 HLS 時設定低緩衝，避免分析幀落後現實過多
 - **錯誤日誌**：FastAPI 端寫入 `logs/error.log`，C# 端用 Serilog
 
 ---
@@ -390,12 +425,13 @@ ctx.fillText(
 
 | # | 問題 | 當前處理方式 | 未來改善方案 |
 |---|---|---|---|
-| 1 | MJPEG FPS 不穩（1~5 fps） | 車速標示 `speed_confidence: low`，前端顯示警示 | 換用 RTSP/HLS 穩定串流 |
-| 2 | 影像解析度低，LPR 效果差 | 架構完整但準確率低，回傳 null 而非錯誤結果 | 換更高解析度影像來源 |
-| 3 | ROI 標定需手動設定 JSON | `cameras.json` 由工程師設定 | 前端互動式 Canvas 標定 UI |
+| 1 | ~~MJPEG FPS 不穩~~ | ✅ **已解決**：改用 BOT HLS（25fps 穩定） | — |
+| 2 | ~~解析度低 LPR 效果差~~ | ✅ **大幅改善**：BOT 路口鏡頭 1280×720，車牌可辨識 | 夜間/逆光場景仍需調整 |
+| 3 | ROI 標定需手動設定 JSON | `cameras.json` 由工程師截圖量測座標後設定 | 前端互動式 Canvas 標定 UI |
 | 4 | 多攝影機追蹤器記憶體管理 | 無 TTL 機制，長期運行可能佔用過多記憶體 | 實作 LRU 快取 + TTL 清理機制 |
-| 5 | MJPEG CORS 限制 | 先跑 proxy 方案或本機開發略過 | C# 後端實作 MJPEG Proxy |
-| 6 | 無攝影機 Camera ID 清單 | 先硬編碼測試用 ID | 串接 TDX API 動態取得清單 + 地理資訊 |
+| 5 | HLS/MJPEG CORS 限制 | 本機開發略過；或透過 C# Proxy 轉發 | C# 後端實作通用 Stream Proxy |
+| 6 | BOT Camera ID 清單需手動整理 | 先硬編碼 BOT323 等測試用 ID | 爬取 tw.live 攝影機清單或串接 TDX API |
+| 7 | HLS 串流分析幀落後即時畫面 | 調低 `cv2.VideoCapture` 緩衝設定 | 改用 FFmpeg pipe 即時截幀，延遲更低 |
 
 ---
 
@@ -412,6 +448,7 @@ easyocr>=1.7.1
 Pillow>=10.3.0
 pydantic>=2.7.0
 requests>=2.32.0
+m3u8>=3.5.0              # 解析 HLS playlist（取得 stream URL）
 ```
 
 ### C# 後端（新增 NuGet）
@@ -445,5 +482,8 @@ npm run dev
 - [ByteTrack 論文](https://arxiv.org/abs/2110.06864)
 - [OpenCV getPerspectiveTransform](https://docs.opencv.org/4.x/da/d54/group__imgproc__transform.html)
 - [EasyOCR GitHub](https://github.com/JaidedAI/EasyOCR)
+- [HLS.js GitHub](https://github.com/video-dev/hls.js/)
+- [tw.live 即時影像監視器](https://tw.live/)（BOT 攝影機整合平台）
+- [台北市交通管制工程處 CCTV](https://hls.bote.gov.taipei/live/index.html)（BOT HLS 原始來源）
 - [TDX 運輸資料流通服務](https://tdx.transportdata.tw/)
 - [高公局開放資料（CCTV 靜態資訊）](https://data.gov.tw/)
